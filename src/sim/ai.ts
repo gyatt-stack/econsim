@@ -11,6 +11,7 @@
 // and nobody lives off the land.
 
 import { MINUTES_PER_DAY, MOVE, ONLINE, OUTSIDE } from './config';
+import { tvAvailable } from './television';
 import { serviceDemand, serviceRate } from './production';
 import { cashOf, cityPop, dayOf, dayStart, hourOf, type Ctx } from './ctx';
 import { BUILDINGS, BUSINESS_KINDS, comfortOf, EDIBLE, foodIn, GOOD, ROLE } from './goods';
@@ -979,7 +980,7 @@ function businessOptions(v: View): Option[] {
     } else if (def.service === 'tv') {
       // advertisers need somewhere to reach people; a channel per ~400 people
       const tvs = climate.tvs;
-      if (pop < 90 || rivals * 400 > pop || tvs < 15) continue;
+      if (!tvAvailable(ctx.s.tick) || pop < 90 || rivals * 400 > pop || tvs < 15) continue;
       daily = tvs * 0.25 + pop * 0.03;
       why = `${tvs} homes with a TV and no ${rivals ? 'good ' : ''}channel`;
     } else if (def.service === 'net') {
@@ -1075,7 +1076,7 @@ function durableOptions(v: View): Option[] {
   const day = Math.max(8, p.hourly * 8);
   if ((p.durables.computers ?? 0) <= 0 && v.home && (p.edu >= 12 || t.curiosity > 0.6)) wants.push({ g: 'computers', value: day * (3 + 6 * t.curiosity + 2 * t.ambition), why: 'wants a computer' });
   if ((p.durables.phone ?? 0) <= 0) wants.push({ g: 'computers', device: 'phone', value: day * (5 + 6 * t.sociability + 3 * t.curiosity), why: 'everyone has a phone' });
-  if ((p.durables.tv ?? 0) <= 0 && v.home) wants.push({ g: 'computers', device: 'tv', value: day * (4 + 5 * t.comfortLove + 2 * (1 - t.curiosity)), why: 'wants a TV for the evenings' });
+  if (tvAvailable(ctx.s.tick) && (p.durables.tv ?? 0) <= 0 && v.home) wants.push({ g: 'computers', device: 'tv', value: day * (4 + 5 * t.comfortLove + 2 * (1 - t.curiosity)), why: 'wants a TV for the evenings' });
   // people with money to spare want nicer things (it makes them happy, and others see it)
   if (p.money > 400 && (p.durables.clothes ?? 0) < 60) wants.push({ g: 'clothes', value: 10 + 15 * t.ambition + 10 * t.comfortLove, why: 'treating themselves to new clothes' });
   if (p.money > 600 && v.home && (p.durables.furniture ?? 0) < 120) wants.push({ g: 'furniture', value: 15 + 25 * t.comfortLove, why: 'wants a nicer home' });
@@ -1226,12 +1227,12 @@ function leisureOptions(v: View): Option[] {
       steps: () => [{ k: 'phone', mins: 15 + Math.floor(ctx.rng.next() * 20) }],
     });
   }
-  if (v.home && (p.durables.tv ?? 0) > 0 && v.hour >= 18 && v.hour < 23) {
-    const on = ctx.s.firms.some((f) => f.channel && f.channel.onAir >= 0);
+  if (v.home && (p.durables.tv ?? 0) > 0 && tvAvailable(ctx.s.tick) && v.hour >= 18 && v.hour < 23) {
+    const on = ctx.s.firms.some((f) => !f.closed && f.channel && f.channel.onAir >= 0);
     out.push({
       label: 'Watch TV at home',
       score: (on ? 0.9 : 0.3) + bored * (0.8 + 0.4 * p.traits.comfortLove) + v.fatigue * 0.5 + evening,
-      why: on ? 'something good is on tonight' : 'streaming something',
+      why: on ? 'something good is on tonight' : 'checking what is on TV',
       steps: () => [go(v.home!), { k: 'watch', mins: 60 }],
     });
   }

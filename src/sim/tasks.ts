@@ -4,6 +4,7 @@
 // (Shifts at work are in production.ts.)
 
 import { CARRY_CAPACITY, MOVE, OUTSIDE } from './config';
+import { tvAvailable } from './television';
 import { addCash, cashOf, cityPop, hourOf, log, pay, type Ctx } from './ctx';
 import { BUILDINGS, chooseFloors, DURABLES, EDIBLE, foodIn, GOOD, invWeight, ROLE, takeFood } from './goods';
 import { buildMinute, checkFinished, createBuilding, deliveredFraction, findLot } from './buildings';
@@ -367,6 +368,7 @@ function execute(ctx: Ctx, p: Person, step: Step): StepResult {
       return task.elapsed >= step.mins ? 'instant' : 'wait';
     }
     case 'watch': {
+      if (!tvAvailable(s.tick)) return 'instant';
       const home = ctx.bById.get(p.home);
       if (task.elapsed === 0 && home && p.inside === home.id) {
         const sofa = homeSpot(home, p.unit, 'sofa');
@@ -612,6 +614,7 @@ function execute(ctx: Ctx, p: Person, step: Step): StepResult {
       return 'instant';
     }
     case 'found': {
+      if (step.kind === 'studio' && !tvAvailable(s.tick)) return 'instant';
       // a vacant shop or office floor: lease it and open there
       if (step.lease !== undefined) {
         const unit = ctx.bById.get(step.lease);
@@ -716,6 +719,7 @@ export function wearTool(p: Person, hours: number): void {
 // --------------------------------------------------------------- customers
 
 function shopMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'shop' }>): StepResult {
+  if (step.device === 'tv' && !tvAvailable(ctx.s.tick)) return 'instant';
   const b = ctx.bById.get(step.store);
   const task = p.task!;
   if (!b || !b.built || b.ruined) return 'instant';

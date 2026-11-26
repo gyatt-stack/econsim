@@ -25,6 +25,9 @@ export interface BuildingLook {
   ownerColor?: Color3 | null; // ownership overlay marker
   /** TV studios: the "ON AIR" light is lit while a broadcast is running. */
   live?: boolean;
+  /** One digit per flat in a cutaway. A 1 means its resident owns a TV. */
+  tvUnits?: string;
+  monochromeTV?: boolean;
   /** The lot center's local z (the building stands toward the lot's front: usually negative). */
   lotZ?: number;
   /**

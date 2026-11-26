@@ -11,6 +11,7 @@ import { POLITICS } from '../sim/config';
 import { TERRITORY_COLS, cellCenter } from '../sim/government';
 import type { Role } from '../sim/types';
 import { MINUTES_PER_DAY } from '../sim/config';
+import { tvEra, type TvEra } from '../sim/television';
 import { BUILDINGS, invWeight } from '../sim/goods';
 import { FLOOR_H, stationsOf } from '../sim/layout';
 import type { Simulation } from '../sim/sim';
@@ -237,7 +238,8 @@ export class WorldRenderer {
     this.roads.setNight(this.nightLevel);
     this.updateCutaway();
     this.updatePoliticsMap();
-    this.buildings.sync(s.buildings, (b) => this.lookOf(b));
+    const era = tvEra(s.tick);
+    this.buildings.sync(s.buildings, (b) => this.lookOf(b, era));
     this.ads.setNight(this.nightLevel);
     this.ads.sync(s.ads, s.world, this.camera.position.x, this.camera.position.z);
     mark('buildings');
@@ -252,7 +254,7 @@ export class WorldRenderer {
     this.updateBubbles();
   }
 
-  private lookOf(b: Building): BuildingLook {
+  private lookOf(b: Building, era: TvEra): BuildingLook {
     const ctx = this.sim.ctx;
     const lot = ctx.lotById.get(b.lot);
     const firm = ctx.fById.get(b.firm);
@@ -265,11 +267,15 @@ export class WorldRenderer {
     }
     // what the sign says: the company, the government, the channel or the website
     const name = b.kind === 'cityhall' && gov ? gov.name
-      : firm?.channel ? firm.channel.name : firm?.site ? firm.site.name : firm?.name;
+      : firm?.channel && era !== 'none' ? firm.channel.name : firm?.site ? firm.site.name : firm?.name;
     const lotZ = lot ? (lot.x - b.x) * Math.cos(b.angle) + (lot.y - b.y) * Math.sin(b.angle) : 0;
     const outside = !!lot && !inGrid(this.sim.state.world, lot.x, lot.y);
     const draped = !!lot && drapedLot(b.kind, lot.w, lot.d, outside);
     const settle = !!lot && settledLot(b.kind, lot.w, lot.d, outside, b.built && !b.ruined);
+    const open = this.cutaway === b.id || (this.cutaway !== null && ctx.bById.get(this.cutaway)?.host === b.id);
+    const tvUnits = open && era !== 'none' && b.units.length
+      ? b.units.map(({ tenant }) => (ctx.byId.get(tenant)?.durables.tv ?? 0) > 0 ? '1' : '0').join('')
+      : '';
     return {
       lotW: lot?.w ?? b.w + 4,
       lotD: lot?.d ?? b.d + 4,
@@ -278,7 +284,8 @@ export class WorldRenderer {
       firmName: name,
       firmHue: gov ? gov.hue : firm?.site ? firm.site.color : firm?.hue,
       ownerColor,
-      ...({ live: !!firm?.channel && firm.channel.onAir >= 0 } as object),
+      live: era !== 'none' && !!firm?.channel && firm.channel.onAir >= 0,
+      tvUnits, monochromeTV: tvUnits.includes('1') && era === 'monochrome',
     };
   }
 

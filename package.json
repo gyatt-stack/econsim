@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "headless": "tsx scripts/headless.ts"
+    "headless": "tsx scripts/headless.ts",
+    "test:tv": "tsx scripts/tv-progress.ts"
   },
   "dependencies": {
     "@babylonjs/core": "9.32.0",

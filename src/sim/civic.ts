@@ -5,6 +5,7 @@
 // regime.ts.
 
 import { MINUTES_PER_DAY } from './config';
+import { tvAvailable } from './television';
 import { dayStart, hourOf, log, newId, type Ctx } from './ctx';
 import { compass, distance, expose, stance } from './ideology';
 import { govSite } from './government';
@@ -42,9 +43,11 @@ export function campaignEventsDaily(ctx: Ctx): void {
     const execCands = e.candidates.filter((c) => !c.withdrawn && ctx.gById.get(e.polity)?.offices.find((o) => o.id === c.office)?.kind === 'exec');
     const debaters = (execCands.length >= 2 ? execCands : e.candidates.filter((c) => !c.withdrawn)).slice(0, 4);
     if (daysLeft < 3.5 && daysLeft > 1 && debaters.length >= 2 && !ctx.s.events.some((ev) => ev.kind === 'debate' && ev.election === e.id)) {
-      const channel = ctx.s.firms.filter((f) => f.channel && !f.closed).sort((a, b) => b.channel!.viewers - a.channel!.viewers)[0];
-      const studio = channel ? channel.sites.map((id) => ctx.bById.get(id)).find((b) => b?.kind === 'studio' && b.built) : undefined;
       const start = dayStart(ctx.s.tick + MINUTES_PER_DAY) + 20 * 60;
+      const channel = tvAvailable(start)
+        ? ctx.s.firms.filter((f) => f.channel && !f.closed).sort((a, b) => b.channel!.viewers - a.channel!.viewers)[0]
+        : undefined;
+      const studio = channel ? channel.sites.map((id) => ctx.bById.get(id)).find((b) => b?.kind === 'studio' && b.built) : undefined;
       const ev: CivicEvent = {
         id: newId(ctx), kind: 'debate', polity: e.polity, host: -1, speakers: debaters.map((c) => c.person),
         place: studio?.id ?? venue(ctx, e.polity), start, end: start + 60, title: `Debate: ${debaters.map((c) => ctx.byId.get(c.person)?.name).join(' vs ')}`,

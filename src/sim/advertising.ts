@@ -24,6 +24,7 @@
 // What it buys: awareness (a brand people have heard of is the one they
 // pick), contacts (companies find suppliers through ads and search), votes.
 
+import { tvAvailable } from './television';
 import { MINUTES_PER_DAY } from './config';
 import { addCash, controllerOf, dayOf, nameOf, newId, pay, type Ctx } from './ctx';
 import { BUILDINGS, GOOD } from './goods';
@@ -303,6 +304,7 @@ function sitesSellingAds(ctx: Ctx): Firm[] {
 }
 
 function bestChannel(ctx: Ctx): Firm | undefined {
+  if (!tvAvailable(ctx.s.tick)) return undefined;
   let best: Firm | undefined, n = 0;
   for (const f of ctx.s.firms) if (!f.closed && (f.channel?.viewers ?? 0) > n) { n = f.channel!.viewers; best = f; }
   return best;

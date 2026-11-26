@@ -10,7 +10,8 @@
 
 import { formatTime, hourOf, nameOf } from '../sim/ctx';
 import { compass, compassLabel } from '../sim/ideology';
-import { SHOWS } from '../sim/media';
+import { hasTvReception, simulationYear, tvEra, tvSchedules, type TvEra } from '../sim/television';
+import { programsForYear } from './tvPrograms';
 import type { Simulation } from '../sim/sim';
 import type { Broadcast, Firm, Person } from '../sim/types';
 import { SKIN } from '../render/palette';
@@ -22,6 +23,10 @@ const hsl = (h: number, s = 55, l = 45) => `hsl(${Math.round(h * 360)} ${s}% ${l
 /** How long each picture stays on the screen (real time). */
 const FRAME_MS = 4500;
 
+const eraNames: Record<TvEra, string> = {
+  none: '', monochrome: 'Black-and-white TV', color: 'Color TV', cable: 'Cable TV',
+};
+
 /** What's on the screen at one moment. */
 type Frame =
   | { k: 'title' }
@@ -31,6 +36,8 @@ type Frame =
 export class TV {
   el: HTMLDivElement;
   private channel = -1;
+  private regional = true;
+  private programId: string | null = null;
   private body: HTMLDivElement;
   private screen: HTMLDivElement;
   private info: HTMLDivElement;
@@ -50,32 +57,55 @@ export class TV {
     this.body = this.el.querySelector('.nw-body')!;
     this.screen = this.el.querySelector('.tv-screen-wrap')!;
     this.info = this.el.querySelector('.tv-info')!;
+    this.screen.addEventListener('error', (e) => {
+      if (!(e.target instanceof HTMLVideoElement)) return;
+      const message = this.screen.querySelector<HTMLElement>('[data-video-error]');
+      if (message) message.hidden = false;
+    }, true);
     this.el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-close]')) { this.hide(); return; }
       if (t.closest('[data-unwatch]')) { this.watcher = -1; this.render(); return; }
+      if (t.closest('[data-guide]')) {
+        this.regional = true;
+        this.watcher = -1;
+        this.render();
+        return;
+      }
+      const choice = t.closest<HTMLButtonElement>('[data-program]');
+      if (choice) {
+        this.programId = choice.dataset.program ?? null;
+        this.render();
+        // A program button is a playback gesture. The native controls also work on their own.
+        void this.screen.querySelector('video')?.play().catch(() => {});
+        return;
+      }
       const ch = t.closest('[data-channel]') as HTMLElement | null;
       // changing the channel yourself: no longer seeing what they see
-      if (ch) { this.channel = Number(ch.dataset.channel); this.watcher = -1; this.render(); return; }
+      if (ch) { this.regional = false; this.channel = Number(ch.dataset.channel); this.watcher = -1; this.render(); return; }
       const sel = t.closest('[data-select]') as HTMLElement | null;
       if (sel) { const [k, id] = sel.dataset.select!.split(':'); this.onSelect(k as 'person' | 'firm', Number(id)); }
     });
   }
 
   setSim(sim: Simulation): void {
+    this.hide();
     this.sim = sim;
     this.channel = -1;
-    this.watcher = -1;
+    this.regional = true;
+    this.programId = null;
   }
 
   toggle(): void {
+    if (!hasTvReception(this.sim.state)) { this.hide(); return; }
     if (this.el.style.display === 'none') { this.el.style.display = 'flex'; this.render(); } else this.hide();
   }
 
   /** Sit down next to someone and watch what they're watching. */
   watchWith(personId: number): void {
     const p = this.sim.ctx.byId.get(personId);
-    if (!p) return;
+    if (!p || !hasTvReception(this.sim.state)) return;
+    this.regional = false;
     this.watcher = personId;
     if (p.pol.tv >= 0) this.channel = p.pol.tv;
     this.el.style.display = 'flex';
@@ -85,6 +115,8 @@ export class TV {
   hide(): void {
     this.el.style.display = 'none';
     this.watcher = -1;
+    this.shown = -1;
+    this.setScreen('', () => '');
   }
 
   update(): void {
@@ -97,6 +129,10 @@ export class TV {
 
   private render(): void {
     const ctx = this.sim.ctx;
+    const era = tvEra(this.sim.tick);
+    if (!hasTvReception(this.sim.state)) { this.hide(); return; }
+    this.el.dataset.era = era;
+    this.el.querySelector('.nw-addr')!.textContent = `📺 ${eraNames[era]}`;
     const watcher = this.watcher >= 0 ? ctx.byId.get(this.watcher) : undefined;
     if (this.watcher >= 0 && !watcher) this.watcher = -1;
     // they flicked to another channel: so do we
@@ -104,7 +140,9 @@ export class TV {
     const chans = this.channels();
     const nav = this.el.querySelector('.nw-tabs') as HTMLDivElement;
     if (!chans.some((f) => f.id === this.channel)) this.channel = chans[0]?.id ?? -1;
-    nav.innerHTML = chans.map((f) => `<button data-channel="${f.id}" class="${f.id === this.channel ? 'on' : ''}" style="color:${hsl(f.hue, 60, 34)}">${esc(f.channel!.name)}${f.channel!.onAir >= 0 ? ' ●' : ''}</button>`).join('');
+    const stationTabs = chans.map((f) => `<button data-channel="${f.id}" class="${!this.regional && f.id === this.channel ? 'on' : ''}" style="color:${hsl(f.hue, 60, 34)}">${esc(f.channel!.name)}${f.channel!.onAir >= 0 ? ' ●' : ''}</button>`).join('');
+    morphHTML(nav, `<button data-guide class="${this.regional ? 'on' : ''}" aria-pressed="${this.regional}">Program guide</button>${stationTabs || `<button data-channel="-1" class="${this.regional ? '' : 'on'}">Local stations</button>`}`);
+    if (this.regional) { this.renderPrograms(); return; }
     const scroll = this.body.scrollTop;
     const f = ctx.fById.get(this.channel);
     if (!f?.channel) {
@@ -121,25 +159,50 @@ export class TV {
       const i = Math.floor((performance.now() - this.since) / FRAME_MS) % frames.length;
       frame = frames[i];
       this.setScreen(`${f.id}:${now.id}:${i}`, () => this.onScreen(f, now, frame!));
-    } else this.setScreen(`off:${f.id}`, () => this.offAir(f));
+    } else this.setScreen(`off:${f.id}:${era}:${hourOf(this.sim.tick)}`, () => this.offAir(f));
     const recent = this.sim.state.broadcasts.filter((b) => b.channel === f.id && b.id !== ch.onAir).slice(-8).reverse();
     const owner = ctx.byId.get(f.owner);
     morphHTML(this.info, `${watcher ? this.watchingWith(watcher, f, now, frame) : ''}
       <div class="nw-site" style="--brand:${hsl(f.hue)}"><div class="nw-hero"><h2>${esc(ch.name)}</h2>
       <div>${now ? `ON AIR: ${esc(now.show)}` : 'off the air right now'}</div>
       <div class="nw-sub" style="color:#fffc">owned by ${esc(nameOf(ctx, f.owner))} · editorial line ${compassLabel(ch.slant, ch.slantAuth)} · ${ch.viewers} viewers yesterday · ads ${ch.adPrice.toFixed(0)}/day</div></div>
-      ${now ? this.broadcast(now, true) : '<p class="nw-sub">Shows air 7–9, 12–14 and 18–23 when a presenter is in the studio.</p>'}
+      ${now ? this.broadcast(now, true) : `<p class="nw-sub">Scheduled starts: ${Object.keys(tvSchedules[era]).map((h) => `${h.padStart(2, '0')}:00`).join(', ')}. A presenter must be in the studio.</p>`}
       ${recent.length ? `<h3>Earlier</h3>${recent.map((b) => this.broadcast(b, false)).join('')}` : ''}
       ${owner ? `<p><button class="nw-link" data-select="firm:${f.id}">show the station in the city</button></p>` : ''}</div>`);
     this.body.scrollTop = scroll;
   }
 
-  /** Redraw the screen only when the picture changes (so the news ticker keeps scrolling). */
+  private renderPrograms(): void {
+    const programs = programsForYear(simulationYear(this.sim.tick));
+    const program = programs.find((item) => item.id === this.programId) ?? programs[0];
+    if (!program) return;
+    this.programId = program.id;
+    const source = `<a href="${esc(program.source)}" target="_blank" rel="noopener noreferrer">${esc(program.credit)}</a>`;
+    this.setScreen(`program:${program.id}`, () => `<div class="tv-set">
+      <video class="tv-screen tv-video" controls playsinline preload="metadata" src="${esc(program.url)}" aria-label="${esc(program.title)}"></video>
+      <p class="tv-video-error" role="status" data-video-error hidden>This video could not load. Watch it at ${source}.</p>
+    </div>`);
+    morphHTML(this.info, `<div class="tv-guide">
+      <h2>${esc(program.title)}</h2>
+      <p class="nw-sub">${esc(program.series)} · ${source}${program.license ? ` · <a href="${esc(program.license)}" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>` : ''}</p>
+      <h3>Regional programs</h3>
+      <div class="tv-programs">${programs.map((item) =>
+        `<button type="button" data-program="${esc(item.id)}" aria-pressed="${item.id === program.id}"><span>${esc(item.series)}</span>${esc(item.title)}</button>`
+      ).join('')}</div></div>`);
+  }
+
+  /** Redraw only when the picture changes, so video playback and the news ticker keep their place. */
   private setScreen(key: string, html: () => string): void {
     if (key === this.screenKey) return;
     // the ticker belongs to the broadcast, not the frame: keep it running between pictures
     const sameShow = key.split(':').slice(0, 2).join(':') === this.screenKey.split(':').slice(0, 2).join(':');
     this.screenKey = key;
+    const video = this.screen.querySelector('video');
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
     const ticker = sameShow ? this.screen.querySelector('.tv-ticker') : null;
     this.screen.innerHTML = html();
     if (ticker) this.screen.querySelector('.tv-ticker')?.replaceWith(ticker);
@@ -180,10 +243,11 @@ export class TV {
   /** Color bars and when the next show is. */
   private offAir(f: Firm | undefined): string {
     const h = hourOf(this.sim.tick);
-    const hours = Object.keys(SHOWS).map(Number).sort((a, b) => a - b);
+    const schedule = tvSchedules[tvEra(this.sim.tick)];
+    const hours = Object.keys(schedule).map(Number).sort((a, b) => a - b);
     const next = hours.find((x) => x > h) ?? hours[0];
     const bars = ['#c0c0c0', '#c0c000', '#00c0c0', '#00c000', '#c000c0', '#c00000', '#0000c0'].map((c) => `<i style="background:${c}"></i>`).join('');
-    const msg = !f ? 'No station on the air' : `${esc(f.channel!.name)} · back at ${String(next).padStart(2, '0')}:00${f.channel!.onAir < 0 && SHOWS[h] ? ' (no presenter in the studio)' : ''}`;
+    const msg = !f ? 'No station on the air' : `${esc(f.channel!.name)} · back at ${String(next).padStart(2, '0')}:00${f.channel!.onAir < 0 && schedule[h] ? ' (no presenter in the studio)' : ''}`;
     return `<div class="tv-set"><div class="tv-screen tv-off"><div class="tv-bars">${bars}</div><div class="tv-offmsg">${msg}</div></div></div>`;
   }
 

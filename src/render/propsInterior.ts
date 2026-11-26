@@ -30,7 +30,7 @@ export function stationDetail(h: Host, s: Station, i: number, tables: Set<string
     case 'machine': machine(h, i); return true;
     case 'shelf': shelf(h, i); return true;
     case 'bed': bed(h, i); return true;
-    case 'sofa': sofa(h, i); return true;
+    case 'sofa': sofa(h, s, i); return true;
     case 'stage': stage(h, i); return true;
     case 'podium': podium(h, s, i); return true;
     case 'camera': camera(h, i); return true;
@@ -445,7 +445,7 @@ function bed(h: Host, i: number): void {
   if (r(16) < 0.6) for (const sx of [-0.08, 0.08]) P.add('box', t, -1.05 + sx, 0.013, 0.55, 0.2, 0.09, 0.04, 0.24, pick(PC.fabric, r(17)));
 }
 
-function sofa(h: Host, i: number): void {
+function sofa(h: Host, station: Station, i: number): void {
   const g = h.solid, P = h.props, t = h.t;
   const r = rnd(h, i);
   const col = pick(PC.fabric, r(1));
@@ -462,16 +462,18 @@ function sofa(h: Host, i: number): void {
   P.add('coffeeTable', t, 0, 0, 1.0, 0, 1, 1, 1, pick(PC.woods, r(12)));
   if (r(13) < 0.8) P.add('mug', t, -0.25, 0.41, 0.95, r(14) * 6, 1, 1, 1, pick(PC.mugs, r(15)));
   if (r(16) < 0.6) P.add('box', t, 0.15, 0.41, 1.02, 0.4, 0.22, 0.01, 0.3, pick(PC.books, r(17)));
-  P.add('remote', t, 0.32, 0.41, 0.9, (r(18) - 0.5) * 0.8);
-  if (r(19) < 0.4) P.add('disc', t, -0.05, 0.41, 1.12, 0, 0.2, 0.05, 0.2, pick(PC.mugs, r(20)));
-  // TV on a stand facing the sofa
-  g.box(0, 0, 2.0, 1.4, 0.5, 0.4, pick([C.woodDark, hx('#2a2c30'), C.white, C.woodLight], r(21)));
-  g.box(0, 0.2, 1.799, 1.3, 0.02, 0.01, shade(C.woodDark, 0.7), 0, false);
-  t.push(0, 0.5, 2.02, PI);
-  P.add('tv', t, 0, 0, 0);
-  P.add('screen', t, 0, 0.1, -0.051, 0, 1.06, 0.6, 1, pick([hx('#9fd0ff'), hx('#bfe8c8'), hx('#f0d8a8'), hx('#c8b8f0'), hx('#2b3b55')], r(22)));
-  t.pop();
-  if (r(23) < 0.5) P.add('box', t, 0.55, 0.5, 2.0, 0, 0.2, 0.06, 0.18, hx('#2a2c30'));
+  if (h.look.tvUnits?.[station.unit ?? 0] === '1') {
+    P.add('remote', t, 0.32, 0.41, 0.9, (r(18) - 0.5) * 0.8);
+    if (r(19) < 0.4) P.add('disc', t, -0.05, 0.41, 1.12, 0, 0.2, 0.05, 0.2, pick(PC.mugs, r(20)));
+    g.box(0, 0, 2.0, 1.4, 0.5, 0.4, pick([C.woodDark, hx('#2a2c30'), C.white, C.woodLight], r(21)));
+    g.box(0, 0.2, 1.799, 1.3, 0.02, 0.01, shade(C.woodDark, 0.7), 0, false);
+    t.push(0, 0.5, 2.02, PI);
+    P.add('tv', t, 0, 0, 0);
+    const picture = h.look.monochromeTV ? hx('#bcbcbc') : pick(PC.screens, r(22));
+    P.add('screen', t, 0, 0.1, -0.051, 0, 1.06, 0.6, 1, picture);
+    t.pop();
+    if (r(23) < 0.5) P.add('box', t, 0.55, 0.5, 2.0, 0, 0.2, 0.06, 0.18, hx('#2a2c30'));
+  }
   // a floor lamp at one end, a plant at the other
   P.add('floorLamp', t, 1.25, 0, -0.2, 0, 1, 1, 1, pick([C.white, PC.cream, hx('#e8c56a')], r(24)));
   P.add('glowBall', t, 1.25, 1.35, -0.2, 0, 0.22, 0.12, 0.22);

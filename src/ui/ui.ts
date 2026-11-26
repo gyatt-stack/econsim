@@ -24,6 +24,7 @@ import { LineChart } from './charts';
 import { CAT_LABEL, features, predict } from '../sim/brain';
 import { Net } from './net';
 import { TV } from './tv';
+import { hasTvReception, simulationYear, tvAvailable } from '../sim/television';
 import { StatsView } from './statsview';
 import { morphElement, morphHTML } from './morph';
 import { governmentHtml, personPoliticsHtml } from './politics';
@@ -106,6 +107,7 @@ export class UI {
   private right: HTMLDivElement;
   private body: HTMLDivElement;
   private clock: HTMLSpanElement;
+  private tvButton: HTMLButtonElement;
   private saveStatus: HTMLSpanElement;
   private charts: LineChart[] = [];
   private chartsAt = -1;
@@ -146,7 +148,7 @@ export class UI {
       <button class="btn" data-act="cinema" title="Movie camera: follows the selected person with changing shots (C)">🎬 Cinema</button>
       <button class="btn" data-act="map" title="Show city limits and electoral districts">Limits</button>
       <button class="btn" data-act="net" title="Browse the Net: websites and apps run by the city's internet companies">🌐 Net</button>
-      <button class="btn" data-act="tv" title="Watch what's on TV">📺 TV</button>
+      <button class="btn" data-act="tv" hidden title="Watch shows and local stations">📺 TV</button>
       <button class="btn" data-act="stats" title="Statistics: the economy, markets, people, housing, companies, government">📊 Stats</button>
       <span class="spacer"></span>
       <span class="muted small save-status"></span>
@@ -155,6 +157,8 @@ export class UI {
       <button class="btn" data-act="new" title="Start a fresh random world">New world</button>`;
     document.body.appendChild(top);
     this.clock = top.querySelector('.clock')!;
+    this.tvButton = top.querySelector('[data-act="tv"]')!;
+    this.updateTvAccess();
     this.saveStatus = top.querySelector('.save-status')!;
     top.addEventListener('click', (e) => {
       const el = (e.target as HTMLElement).closest('button');
@@ -364,6 +368,7 @@ export class UI {
     this.sim = sim;
     this.net.setSim(sim);
     this.tv.setSim(sim);
+    this.updateTvAccess();
     this.stats.setSim(sim);
     this.polity = -1;
     this.select(null);
@@ -474,13 +479,20 @@ export class UI {
     this.renderer.focusOn((x0 + x1) / 2, (y0 + y1) / 2, Math.max(x1 - x0, y1 - y0) * 1.1 + 150, true);
   }
 
+  private updateTvAccess(): void {
+    this.tvButton.hidden = !hasTvReception(this.sim.state);
+    this.clock.title = !tvAvailable(this.sim.tick) ? 'Television technology arrives in Year 2.'
+      : this.tvButton.hidden ? 'The city needs its first TV set or local station to receive programs.' : '';
+  }
+
   /** Called every frame; the DOM refreshes a few times per second. */
   update(): void {
     const now = performance.now();
-    this.clock.textContent = formatTime(this.sim.tick);
+    this.clock.textContent = `Year ${simulationYear(this.sim.tick)} · ${formatTime(this.sim.tick)}`;
     today.update(this.sim.state);
     if (now - this.lastRender < 300) return;
     this.lastRender = now;
+    this.updateTvAccess();
     this.syncBorders();
     this.renderTab(false);
     this.renderInspector();
@@ -812,7 +824,7 @@ export class UI {
     const needColor = (v: number) => (v < 25 ? 'var(--critical)' : v < 50 ? 'var(--warning)' : 'var(--good)');
     const carried = GOODS.filter((g) => p.inv[g] >= 0.5).map((g) => `${Math.floor(p.inv[g])} ${GOOD[g].label}`).join(', ') || 'nothing';
     const pantry = GOODS.filter((g) => p.pantry[g] >= 0.5).map((g) => `${Math.floor(p.pantry[g])} ${GOOD[g].label}`).join(', ') || 'empty';
-    const owns = Object.entries(p.durables).filter(([, v]) => (v ?? 0) > 0).map(([g]) => (g === 'phone' ? 'a phone' : g === 'tv' ? 'a TV' : g === 'computers' ? 'a computer' : GOOD[g as Good].label)).join(', ');
+    const owns = Object.entries(p.durables).filter(([g, v]) => (v ?? 0) > 0 && (g !== 'tv' || tvAvailable(ctx.s.tick))).map(([g]) => (g === 'phone' ? 'a phone' : g === 'tv' ? 'a TV' : g === 'computers' ? 'a computer' : GOOD[g as Good].label)).join(', ');
     const d = p.decision;
     const opts = d ? d.options.map((o) => `<div class="opt${o.label === d.chosen ? ' chosen' : ''}"><span class="l">${esc(o.label)}</span><span class="s">${o.score.toFixed(2)}</span><span class="w">${esc(o.why)}</span></div>`).join('') : '';
     const t = p.traits;
@@ -849,7 +861,7 @@ export class UI {
       <div class="panel-body">
         ${this.clickedAdCard((a) => a.sponsor === p.id)}
         <div class="why"><div class="doing">${esc(p.task?.label ?? 'Deciding what to do')}</div>${d ? `<div class="muted small" style="margin-top:2px">because: ${esc(d.why)}</div>` : ''}
-          ${step?.k === 'watch' ? `<button class="btn watch-btn" data-watch="${p.id}">📺 Watch with them</button>` : ''}</div>
+          ${step?.k === 'watch' && tvAvailable(ctx.s.tick) ? `<button class="btn watch-btn" data-watch="${p.id}">📺 Watch with them</button>` : ''}</div>
         ${p.saying ? `<div class="speech">“${esc(p.saying)}”</div>` : ''}
         <h3>Life</h3><div class="kv">
           <span class="k">Job</span><span>${jobText}</span>
@@ -1105,7 +1117,7 @@ export class UI {
         ${f.branch ? `<div class="card">A local branch of <b>${esc(f.branch)}</b>, a chain from outside the city: it's run by a manager hired here, and its profits leave the city.</div>` : ''}
         <div class="kv">
           <span class="k">Owner</span><span>${ownerText}${f.manager !== undefined && ctx.byId.has(f.manager) ? ` · run by ${this.personLink(f.manager)}` : ''}${f.gov !== undefined && !ctx.govOfFirm.has(f.id) ? ' · <b>state-owned</b>' : ''}</span>
-          ${f.channel ? `<span class="k">TV</span><span>${esc(f.channel.name)} · ${f.channel.viewers} viewers · ${f.channel.onAir >= 0 ? 'on the air' : 'off the air'}</span>` : ''}
+          ${f.channel && tvAvailable(ctx.s.tick) ? `<span class="k">TV</span><span>${esc(f.channel.name)} · ${f.channel.viewers} viewers · ${f.channel.onAir >= 0 ? 'on the air' : 'off the air'}</span>` : ''}
           <span class="k">Founded</span><span>${shortTime(f.founded)}</span>
           <span class="k">Sales</span><span>${(f.revenueAvg ?? 0).toFixed(1)}/day on average · ${f.ledger.revenue.toFixed(0)} so far today</span>
           <span class="k">Cash</span><span>${f.cash.toFixed(0)}</span>

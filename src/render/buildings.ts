@@ -1396,6 +1396,7 @@ interface Extra { units: number; level: number; occ: number }
 interface Sig extends Extra {
   ver: number; cond: number; built: boolean; ruined: boolean; floors: number; prog: number;
   name: string; hue: number; lotW: number; lotD: number; ground: number; live: boolean;
+  tvUnits?: string; monochromeTV?: boolean;
   x: number; y: number; angle: number; w: number; d: number; kind: BuildingKind; cut: boolean;
 }
 
@@ -1447,6 +1448,7 @@ function sigOf(b: Building, look: BuildingLook, cut: boolean, x: Extra): Sig {
     ver: b.ver, cond: Math.round(b.condition * 10), built: b.built, ruined: b.ruined, floors: b.floors, prog: progKey(b),
     name: look.firmName ?? '', hue: look.firmHue === undefined ? -1 : Math.round(look.firmHue * 100),
     lotW: Math.round((look.lotW || 0) * 10), lotD: Math.round((look.lotD || 0) * 10), ground: Math.round(look.ground * 20), live: !!look.live,
+    tvUnits: look.tvUnits, monochromeTV: look.monochromeTV,
     x: b.x, y: b.y, angle: b.angle, w: b.w, d: b.d, kind: b.kind, cut, units: x.units, level: x.level, occ: x.occ,
   };
 }
@@ -1456,6 +1458,7 @@ function sigMatches(a: Sig, b: Building, look: BuildingLook, cut: boolean, x: Ex
   return a.ver === b.ver && a.built === b.built && a.ruined === b.ruined && a.floors === b.floors
     && a.cond === Math.round(b.condition * 10) && a.x === b.x && a.y === b.y && a.angle === b.angle
     && a.w === b.w && a.d === b.d && a.kind === b.kind && a.cut === cut && a.live === !!look.live
+    && a.tvUnits === look.tvUnits && a.monochromeTV === look.monochromeTV
     && a.name === (look.firmName ?? '') && a.hue === (look.firmHue === undefined ? -1 : Math.round(look.firmHue * 100))
     && a.lotW === Math.round((look.lotW || 0) * 10) && a.lotD === Math.round((look.lotD || 0) * 10)
     && a.ground === Math.round(look.ground * 20) && a.prog === progKey(b)

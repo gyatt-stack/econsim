@@ -508,6 +508,16 @@ td.r, th.r { text-align: right; }
 .netwin.tv { left: auto; right: 380px; transform: none; width: min(560px, calc(100% - 24px)); }
 .netwin.tv .nw-body { padding: 14px 18px 24px; }
 .netwin.tv .nw-tabs button { padding: 3px 9px; }
+.tv[data-era="monochrome"] .tv-screen { filter: grayscale(1); }
+.tv-video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; background: #101010; }
+.tv-video-error { margin: 8px 4px 2px; color: #fff; }
+.tv-video-error a { color: #a7d8ff; }
+.tv-guide h2 { margin: 4px 0; }
+.tv-guide h3 { margin: 16px 0 8px; }
+.tv-programs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 6px; }
+.tv-programs button { text-align: left; padding: 8px 10px; border: 1px solid #cccbc2; border-radius: 5px; background: #fff; color: #212d34; cursor: pointer; }
+.tv-programs button[aria-pressed="true"] { border-color: #36685c; background: #e4f0eb; }
+.tv-programs button span { display: block; font-size: 11px; color: #54675f; }
 .tv-break { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
 .tv-spot { color: #fff; font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
 

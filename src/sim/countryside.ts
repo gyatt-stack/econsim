@@ -14,6 +14,7 @@
 // updated less often. That's what lets the countryside hold many more people
 // than the same number of city people would cost.
 
+import { tvAvailable } from './television';
 import { COUNTRY, MAP, MINUTES_PER_DAY, POPULATION, WAGES } from './config';
 import { log, type Ctx } from './ctx';
 import { BUILDINGS, ROLE } from './goods';
@@ -341,7 +342,8 @@ function local(ctx: Ctx, x: number, y: number, money: number): Person {
   p.pantry.groceries = 6;
   p.pantry.bread = 2;
   p.pantry.produce = 2;
-  p.durables.tv = ctx.rng.range(100, 600);
+  const tvLife = ctx.rng.range(100, 600); // preserve the same countryside layout for this seed
+  if (tvAvailable(ctx.s.tick)) p.durables.tv = tvLife;
   p.durables.furniture = ctx.rng.range(100, 500);
   return p;
 }

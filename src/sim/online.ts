@@ -17,6 +17,7 @@
 // - Crowdfunding: someone short of money to start a business asks the
 //   crowd; backers chip in; the site keeps a share if the goal is reached.
 
+import { tvAvailable } from './television';
 import { MOVE, ONLINE, OUTSIDE } from './config';
 import { addCash, cashOf, hourOf, log, nameOf, newId, type Ctx } from './ctx';
 import { BUILDINGS, emptyInv, foodIn, GOOD, takeFood } from './goods';
@@ -100,6 +101,7 @@ function paymentFee(ctx: Ctx, p: Person, payee: number, amount: number): void {
 
 /** The 'order' step: pay, and a delivery is on its way. */
 export function placeOrder(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order' }>): void {
+  if (step.device === 'tv' && !tvAvailable(ctx.s.tick)) return;
   const home = ctx.bById.get(p.home);
   if (step.meal) { ctx.s.counters.orders = (ctx.s.counters.orders ?? 0) + 1; orderMeal(ctx, p, step, home); return; }
   if (!home) return;
@@ -443,6 +445,7 @@ export function appsDaily(ctx: Ctx): void {
 
 /** Start a crowdfunding campaign for a business (the 'crowdfund' step). */
 export function launchCrowdfund(ctx: Ctx, p: Person, kind: Building['kind'], goal: number): void {
+  if (kind === 'studio' && !tvAvailable(ctx.s.tick)) return;
   const site = siteOf(ctx, 'crowd');
   if (!site) return;
   ctx.s.crowdfunds ??= [];

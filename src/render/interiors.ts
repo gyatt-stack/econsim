@@ -175,9 +175,10 @@ function furniture(c: Ctx, s: Station, i: number, tables: Set<string>): void {
       g.box(0, 0.08, -0.34, 1.9, 0.75, 0.2, shade(col, 0.9));
       for (const sx of [-0.88, 0.88]) g.box(sx, 0.08, 0, 0.16, 0.55, 0.85, shade(col, 0.9));
       g.box(0, 0, 1.0, 0.9, 0.4, 0.5, C.woodLight);
+      if (c.look.tvUnits?.[s.unit ?? 0] !== '1') break;
       g.box(0, 0, 2.0, 1.2, 0.5, 0.35, C.woodDark);
       g.box(0, 0.5, 2.05, 1.0, 0.6, 0.05, C.dark);
-      c.screen.poly([-0.45, 0.53, 2.02, 0.45, 0.53, 2.02, 0.45, 1.07, 2.02, -0.45, 1.07, 2.02], GLOW_SCREEN, 0, 0, -1);
+      c.screen.poly([-0.45, 0.53, 2.02, 0.45, 0.53, 2.02, 0.45, 1.07, 2.02, -0.45, 1.07, 2.02], c.look.monochromeTV ? hx('#bcbcbc') : GLOW_SCREEN, 0, 0, -1);
       break;
     }
     default:

@@ -16,6 +16,7 @@
 // influencers); the sites earn from ads, commissions and fees.
 
 import { MINUTES_PER_DAY } from './config';
+import { tvAvailable, tvEra, tvSchedules } from './television';
 import { cityPop, controllerOf, dayOf, hourOf, log, nameOf, newId, type Ctx } from './ctx';
 import { BUILDINGS, GOOD, ROLE } from './goods';
 import { compass, distance, expose } from './ideology';
@@ -32,20 +33,22 @@ import type { Broadcast, ChatLine, Firm, Person, Post, Site, SiteKind } from './
 
 // ---------------------------------------------------------------------- TV
 
-/** When a studio opens it starts a channel; when an internet company's office opens it launches its site. */
+function openChannel(ctx: Ctx, f: Firm): void {
+  const owner = controllerOf(ctx, f);
+  const used = new Set(ctx.s.firms.map((x) => x.channel?.name));
+  let name = channelName(ctx.rng);
+  for (let k = 0; k < 6 && used.has(name); k++) name = channelName(ctx.rng);
+  const c = owner ? compass(owner) : { econ: 0, auth: 0 };
+  f.channel = { name, slant: c.econ, slantAuth: c.auth, viewers: 0, adPrice: 6, onAir: -1, style: owner && owner.traits.ambition > 0.7 ? 'tabloid' : 'news' };
+  log(ctx, 'media', `${f.name} went on the air as ${name}.`, { firm: f.id });
+}
+
+/** A finished studio or internet office can start serving the city. */
 onFinished.push((ctx, b) => {
   const f = ctx.fById.get(b.firm);
   if (!f) return;
-  const owner = controllerOf(ctx, f);
-  if (b.kind === 'studio' && !f.channel) {
-    const used = new Set(ctx.s.firms.map((x) => x.channel?.name));
-    let name = channelName(ctx.rng);
-    for (let k = 0; k < 6 && used.has(name); k++) name = channelName(ctx.rng);
-    const c = owner ? compass(owner) : { econ: 0, auth: 0 };
-    f.channel = { name, slant: c.econ, slantAuth: c.auth, viewers: 0, adPrice: 6, onAir: -1, style: owner && owner.traits.ambition > 0.7 ? 'tabloid' : 'news' };
-    log(ctx, 'media', `${f.name} went on the air as ${name}.`, { firm: f.id });
-  }
-  if (b.kind === 'netco' && !f.site) launchSite(ctx, f, owner);
+  if (b.kind === 'studio' && !f.channel && tvAvailable(ctx.s.tick)) openChannel(ctx, f);
+  if (b.kind === 'netco' && !f.site) launchSite(ctx, f, controllerOf(ctx, f));
 });
 
 /**
@@ -114,24 +117,25 @@ function launchSite(ctx: Ctx, f: Firm, owner: Person | undefined): void {
   log(ctx, 'media', `${f.name} launched ${name} (${f.site.domain}), ${what[kind] ?? `a ${kind} site`}.`, { firm: f.id });
 }
 
-export const SHOWS: Record<number, { show: string; kind: Broadcast["kind"] }> = {
-  7: { show: 'Morning News', kind: 'news' }, 8: { show: 'Good Morning City', kind: 'talk' },
-  12: { show: 'Noon Report', kind: 'news' }, 13: { show: 'Afternoon Matinee', kind: 'entertainment' },
-  18: { show: 'Evening News', kind: 'news' }, 19: { show: 'The Business Hour', kind: 'talk' },
-  20: { show: 'Talk of the City', kind: 'talk' }, 21: { show: 'Prime Time Drama', kind: 'entertainment' }, 22: { show: 'Late News', kind: 'news' },
-};
-
-/** Hourly: each channel airs its show (if someone's in the studio). */
+/** Hourly: each channel airs its era's shows if a presenter is in the studio. */
 export function tvHourly(ctx: Ctx): void {
+  const era = tvEra(ctx.s.tick);
   const h = hourOf(ctx.s.tick);
   for (const f of ctx.s.firms) {
-    if (!f.channel || f.closed) continue;
+    if (f.closed || (!f.channel && f.kind !== 'studio')) continue;
+    if (era === 'none') {
+      if (f.channel) f.channel.onAir = -1;
+      continue;
+    }
     const studio = ctx.bById.get(f.sites.find((id) => ctx.bById.get(id)?.kind === 'studio') ?? -1);
-    let slot = SHOWS[h];
+    // A studio completed before the unlock (including in an older save) can now open.
+    if (!f.channel && studio?.built && !studio.ruined) openChannel(ctx, f);
+    if (!f.channel) continue;
+    let slot = tvSchedules[era][h];
     const debate = ctx.s.events.find((e) => e.kind === 'debate' && e.channel === f.id && e.start <= ctx.s.tick && e.end > ctx.s.tick);
     if (debate) slot = { show: 'Election Debate', kind: 'debate' };
     if (!slot) { f.channel.onAir = -1; continue; }
-    if (!studio || !studio.built || (!staffPresent(ctx, studio.id, 'presenter') && !debate)) { f.channel.onAir = -1; continue; }
+    if (!studio || !studio.built || studio.ruined || (!staffPresent(ctx, studio.id, 'presenter') && !debate)) { f.channel.onAir = -1; continue; }
     const presenter = ctx.s.people.find((p) => p.inside === studio.id && ctx.cById.get(p.job)?.role === 'presenter') ?? controllerOf(ctx, f);
     const b = makeBroadcast(ctx, f, slot.show, slot.kind, presenter, debate?.id);
     ctx.s.broadcasts.push(b);
@@ -219,6 +223,7 @@ function frame(text: string, econ: number, censored: boolean): string {
 
 /** What someone watching TV right now sees and how it affects them. */
 export function watchMinute(ctx: Ctx, p: Person, dt = 1): string | null {
+  if (!tvAvailable(ctx.s.tick)) return null;
   let ch = ctx.fById.get(p.pol.tv);
   if (!ch?.channel || ch.closed || ch.channel.onAir < 0) {
     // pick a channel: one that's on, closer to their views, or the one with the bigger audience
@@ -255,7 +260,7 @@ function scoreChannel(p: Person, f: Firm): number {
 export function mediaDaily(ctx: Ctx): void {
   const d = dayOf(ctx.s.tick);
   for (const f of ctx.s.firms) {
-    if (f.channel) {
+    if (f.channel && tvAvailable(ctx.s.tick)) {
       const viewers = ctx.s.broadcasts.filter((b) => b.channel === f.id && dayOf(b.t) === d - 1).reduce((s, b) => s + b.viewers, 0);
       f.channel.viewers = Math.round(0.6 * f.channel.viewers + 0.4 * viewers);
       f.channel.adPrice = Math.max(2, 2 + f.channel.viewers * 0.12);
@@ -498,7 +503,8 @@ export function firmPost(ctx: Ctx, f: Firm): void {
   if (def.service === 'cars' && f.prices.cars) options.push(`New cars in stock at ${f.name}! From ${f.prices.cars.toFixed(0)}.`);
   if (def.service === 'freight') options.push(`${f.name} delivers anywhere in the city. ${f.slogan}.`);
   if (def.service === 'build') options.push(`Need a building? ${f.name} builds it. ${f.slogan}.`);
-  if (f.channel) options.push(`Tonight on ${f.channel.name}: ${SHOWS[20].show} at 8.`);
+  const eveningShow = f.channel && tvSchedules[tvEra(ctx.s.tick)][20];
+  if (f.channel && eveningShow) options.push(`Tonight on ${f.channel.name}: ${eveningShow.show} at 8.`);
   if (f.site) options.push(`${f.site.name}: ${f.site.tagline}. ${f.site.users} people already joined.`);
   const g = ctx.govOfFirm.get(f.id);
   if (g) options.push(g.nextElection > 0 ? `${g.name}: the next election is on day ${Math.floor(g.nextElection / MINUTES_PER_DAY) + 1}. Make sure you vote!` : `${g.name}: the council meets on day ${Math.floor(g.nextSession / MINUTES_PER_DAY) + 1}.`);
